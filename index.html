@@ -367,15 +367,24 @@ function renderAllViews(){ renderStatus(); renderNext(); renderToday(); renderAl
 
 /* ============ 提醒 ============ */
 function notifySupport(){ return ("Notification" in window); }
+function notifyPermission(){ return notifySupport() ? Notification.permission : "unsupported"; }
+function canNotify(){ return notifySupport() && Notification.permission==="granted"; }
+function refreshNotifyUI(){
+  const b=$("btnNotify");
+  if(!b) return;
+  const p=notifyPermission();
+  b.textContent = p==="granted" ? "通知已开启" : (p==="denied" ? "通知被拒绝" : (p==="unsupported" ? "通知不可用(需HTTPS)" : "开启通知"));
+}
 function requestNotify(){
-  if(!notifySupport()){ toast("当前环境不支持系统通知"); return; }
+  if(!notifySupport()){ toast("当前环境不支持系统通知（需 HTTPS 打开）"); return; }
   Notification.requestPermission().then(p=>{
-    toast(p==="granted" ? "通知已开启" : (p==="denied"?"通知被拒绝（可在浏览器设置里打开）":"请稍后再试"));
-    renderAllViews();
+    refreshNotifyUI();
+    if(p==="granted") toast("通知已开启");
+    else if(p==="denied") toast("通知被拒绝：浏览器站点设置→通知 里允许；安卓还需在系统设置里给 Chrome 开通知权限");
+    else toast("未授权，请再点一次");
   });
 }
 function fireReminder(c, now){
-  const body = esc(c.name)+"  "+c.start+"–"+c.end+" @ "+esc(c.location)+"，还有 "+(settings.remindMinutes||20)+" 分钟上课";
   // 应用内横幅
   const banner=$("remindBanner");
   $("remindTitle").textContent="上课提醒 · "+c.start+" "+c.name;
@@ -384,8 +393,17 @@ function fireReminder(c, now){
   clearTimeout(currentReminderBanner);
   currentReminderBanner=setTimeout(()=>{ banner.style.display="none"; }, 30000);
   // 系统通知
-  if(notifySupport() && Notification.permission==="granted"){
-    try{ new Notification("上课提醒："+c.name, { body: c.start+"–"+c.end+" @ "+c.location, tag:"class-"+c.id+"-"+dateKey(now)+"-"+c.start }); }catch(e){}
+  if(canNotify()){
+    const title="上课提醒："+c.name;
+    const body=c.start+"–"+c.end+" @ "+c.location;
+    const tag="class-"+c.id+"-"+dateKey(now)+"-"+c.start;
+    const opts={body, tag, icon:"icon-192.png", badge:"icon-192.png", vibrate:[200,100,200], renotify:true};
+    const plain=()=>{ try{ new Notification(title, opts); }catch(e){ console.warn("通知失败", e); } };
+    if(navigator.serviceWorker && navigator.serviceWorker.ready){
+      navigator.serviceWorker.ready.then(reg=>{
+        if(reg && reg.showNotification){ reg.showNotification(title, opts).catch(plain); } else { plain(); }
+      }).catch(plain);
+    } else { plain(); }
   }
   if(navigator.vibrate){ try{ navigator.vibrate([200,100,200]); }catch(e){} }
 }
@@ -410,7 +428,11 @@ function testReminder(){
   const nx=nextClass(new Date());
   if(!nx){ toast("没有下一节课可测"); return; }
   fireReminder(nx.course, new Date());
-  toast("已触发测试提醒（横幅/系统通知/震动）");
+  const p=notifyPermission();
+  if(p==="unsupported") toast("已触发横幅+震动；系统通知不可用（需 HTTPS 打开）");
+  else if(p==="granted") toast("已触发横幅+震动+系统通知（若收不到，检查安卓系统里 Chrome 的通知权限）");
+  else if(p==="denied") toast("已触发横幅+震动；系统通知被拒绝（浏览器站点设置或系统设置里打开）");
+  else toast("已触发横幅+震动；系统通知未授权，先点右上角「开启通知」");
 }
 
 /* ============ 弹窗 ============ */
@@ -566,9 +588,7 @@ setInterval(()=>{
 setInterval(()=>checkReminders(new Date()), 30000);
 checkReminders(new Date());
 
-// 通知状态文案
-if(notifySupport() && Notification.permission==="granted"){ $("btnNotify").textContent="通知已开启"; }
-else if(notifySupport() && Notification.permission==="denied"){ $("btnNotify").textContent="通知被拒绝"; }
+refreshNotifyUI();
 
 // 服务工作线程（仅 https/localhost 下生效，用于离线缓存）
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
