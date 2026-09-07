@@ -50,6 +50,19 @@ button.btn:active{opacity:.8}
 footer{position:fixed;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;background:#fff;border-top:1px solid var(--line);
   display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:20}
 footer .btn{flex:1;text-align:center}
+/* 周课表 */
+.weeknav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.weeknav-center{text-align:center;flex:1}
+#weekLabel{font-weight:600}
+#weekRange{font-size:12px;color:var(--muted)}
+li.daygroup{border-top:1px solid var(--line);padding:8px 0}
+li.daygroup:first-child{border-top:none;padding-top:2px}
+.dayhead{font-weight:600;margin-bottom:6px}
+.dayitems{display:flex;flex-direction:column;gap:6px}
+.dayitem{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.dayitem .tm{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600;min-width:88px}
+.dayitem .loc{margin-left:auto;font-size:13px;color:var(--muted)}
+.day-empty{color:var(--muted);font-size:13px}
 /* modal */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none;align-items:flex-end;justify-content:center}
 .overlay.show{display:flex}
@@ -88,6 +101,19 @@ footer .btn{flex:1;text-align:center}
   <section class="card" id="nextCard">
     <h2>下一节课 <button class="btn ghost" id="btnNotify" style="font-size:12px;padding:4px 10px">开启通知</button></h2>
     <div id="nextBox"></div>
+  </section>
+
+  <section class="card" id="weekCard">
+    <h2>一周课表 <button class="btn ghost" id="btnThisWeek" style="font-size:12px;padding:4px 10px">回到本周</button></h2>
+    <div class="weeknav">
+      <button class="btn" id="btnPrevWeek">‹ 上一周</button>
+      <div class="weeknav-center">
+        <div id="weekLabel">…</div>
+        <div id="weekRange"></div>
+      </div>
+      <button class="btn" id="btnNextWeek">下一周 ›</button>
+    </div>
+    <ul class="clean" id="weekList"></ul>
   </section>
 
   <section class="card">
@@ -357,13 +383,53 @@ function renderToday(){
   if(!list.length){ ul.innerHTML='<li class="item"><span class="muted">今天没有课</span></li>'; return; }
   ul.innerHTML=list.map(itemHTML).join("");
 }
+let previewWeek = null; // null=跟随本周
+
+function weekStartDate(wk){
+  return new Date(parseDate(settings.semesterStart).getTime() + (wk-1)*7*86400000);
+}
+function fmtMD(d){ return (d.getMonth()+1)+"-"+d.getDate(); }
+function renderWeek(){
+  const wk = previewWeek || getWeekNum(new Date());
+  const start = weekStartDate(wk);
+  const end = new Date(start.getTime()+6*86400000);
+  $("weekLabel").textContent = "第 "+wk+" 周";
+  $("weekRange").textContent = fmtMD(start)+" ~ "+fmtMD(end) + (wk===getWeekNum(new Date()) ? " · 本周" : "");
+  $("btnThisWeek").style.display = (wk===getWeekNum(new Date())) ? "none" : "";
+  const byDay={1:[],2:[],3:[],4:[],5:[],6:[],7:[]};
+  for(const c of courses){ if(c.weeks.includes(wk) && byDay[c.weekday]) byDay[c.weekday].push(c); }
+  for(const d in byDay) byDay[d].sort((a,b)=>toMin(a.start)-toMin(b.start));
+  let html="";
+  for(let d=1; d<=7; d++){
+    const date = new Date(start.getTime()+(d-1)*86400000);
+    html += '<li class="daygroup"><div class="dayhead">'+WD_FULL[d]+' · '+fmtMD(date)+'</div>';
+    const list=byDay[d];
+    if(!list.length){ html += '<div class="day-empty">无课</div>'; }
+    else {
+      html += '<div class="dayitems">';
+      for(const c of list){
+        html += '<div class="dayitem"><span class="tm">'+c.start+'–'+c.end+'</span><span>'+esc(c.name)+'</span><span class="loc">'+esc(c.location)+'</span></div>';
+      }
+      html += '</div>';
+    }
+    html += '</li>';
+  }
+  $("weekList").innerHTML = html;
+}
+function changeWeek(delta){
+  const wk = (previewWeek || getWeekNum(new Date())) + delta;
+  if(wk < 1) return;
+  previewWeek = wk;
+  renderWeek();
+}
+function goThisWeek(){ previewWeek = null; renderWeek(); }
 function renderAll(){
   const ul=$("courseList");
   if(!courses.length){ ul.innerHTML='<li class="item"><span class="muted">还没有课程，点「添加课程」或「导入 CSV」</span></li>'; return; }
   const sorted=courses.slice().sort((a,b)=> (a.weekday-b.weekday) || (toMin(a.start)-toMin(b.start)) || (a.name<b.name?-1:1));
   ul.innerHTML=sorted.map(itemHTML).join("");
 }
-function renderAllViews(){ renderStatus(); renderNext(); renderToday(); renderAll(); }
+function renderAllViews(){ renderStatus(); renderNext(); renderWeek(); renderToday(); renderAll(); }
 
 /* ============ 提醒 ============ */
 function notifySupport(){ return ("Notification" in window); }
@@ -569,6 +635,9 @@ $("btnExport2").addEventListener("click", exportCSV);
 $("btnSettings").addEventListener("click", openSettings);
 $("btnNotify").addEventListener("click", requestNotify);
 $("btnTestRemind").addEventListener("click", testReminder);
+$("btnPrevWeek").addEventListener("click", ()=>changeWeek(-1));
+$("btnNextWeek").addEventListener("click", ()=>changeWeek(1));
+$("btnThisWeek").addEventListener("click", goThisWeek);
 document.addEventListener("click", e=>{
   const ed=e.target.closest("[data-edit]"); if(ed){ openEdit(ed.getAttribute("data-edit")); return; }
   const del=e.target.closest("[data-del]"); if(del){
