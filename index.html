@@ -17,11 +17,15 @@
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{background:var(--bg); color:var(--text); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-  max-width:640px; margin:0 auto; min-height:100vh;}
+  max-width:960px; margin:0 auto; min-height:100vh;}
 header{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;padding:14px 16px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 header h1{margin:0;font-size:18px;font-weight:600}
 #status{margin-top:4px;font-size:13px;opacity:.95}
 main{padding:14px 14px 96px}
+@media (min-width:768px){
+  main{padding:20px 24px 112px;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  #nextCard,#allSection{grid-column:1 / -1}
+}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card h2{margin:0 0 10px;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
 .muted{color:var(--muted)}
@@ -47,7 +51,7 @@ button.btn.primary{background:var(--accent);color:#fff}
 button.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--text)}
 button.btn.warn{background:#fef2f2;color:var(--warn)}
 button.btn:active{opacity:.8}
-footer{position:fixed;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;background:#fff;border-top:1px solid var(--line);
+footer{position:fixed;left:0;right:0;bottom:0;max-width:960px;margin:0 auto;background:#fff;border-top:1px solid var(--line);
   display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:20}
 footer .btn{flex:1;text-align:center}
 /* 周课表 */
@@ -66,7 +70,7 @@ li.daygroup:first-child{border-top:none;padding-top:2px}
 /* modal */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none;align-items:flex-end;justify-content:center}
 .overlay.show{display:flex}
-.sheet{background:#fff;width:100%;max-width:640px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:86vh;overflow:auto}
+.sheet{background:#fff;width:100%;max-width:720px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:86vh;overflow:auto}
 .sheet h3{margin:0 0 14px;font-size:16px}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
@@ -80,7 +84,7 @@ li.daygroup:first-child{border-top:none;padding-top:2px}
 /* toast + remind banner */
 #toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60;max-width:90vw}
 #toast.show{opacity:1}
-#remindBanner{position:fixed;top:0;left:0;right:0;max-width:640px;margin:0 auto;background:#fff7ed;border-bottom:1px solid #fed7aa;color:#9a3412;padding:12px 16px;z-index:55;display:none}
+#remindBanner{position:fixed;top:0;left:0;right:0;max-width:960px;margin:0 auto;background:#fff7ed;border-bottom:1px solid #fed7aa;color:#9a3412;padding:12px 16px;z-index:55;display:none}
 #remindBanner .t{font-weight:600;margin-bottom:2px}
 #remindBanner .close{float:right;border:none;background:none;color:#9a3412;font-size:16px;cursor:pointer}
 @media (min-width:640px){ .overlay{align-items:center} .sheet{border-radius:18px} }
@@ -117,12 +121,12 @@ li.daygroup:first-child{border-top:none;padding-top:2px}
     <ul class="clean" id="weekList"></ul>
   </section>
 
-  <section class="card">
+  <section class="card" id="todaySection">
     <h2>今日课程 <span class="muted" id="todayHint"></span></h2>
     <ul class="clean" id="todayList"></ul>
   </section>
 
-  <section class="card">
+  <section class="card" id="allSection">
     <h2>全部课程</h2>
     <div class="toolbar">
       <button class="btn primary" id="btnAdd">＋ 添加课程</button>
