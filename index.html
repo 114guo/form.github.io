@@ -74,6 +74,7 @@ li.daygroup:first-child{border-top:none;padding-top:2px}
 .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid #bfdbfe;border-color:var(--accent)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.sesrow{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
 .sheet-actions{display:flex;gap:10px;margin-top:16px}
 .sheet-actions .btn{flex:1}
 /* toast + remind banner */
@@ -373,7 +374,7 @@ function itemHTML(c){
     '<div><div class="nm">'+esc(c.name)+'</div>'+
     '<div class="sub">'+wd+' 第'+c.ps+'–'+c.pe+'节 '+c.start+'–'+c.end+' · '+esc(c.location)+'</div>'+
     '<div class="sub">第 '+weeks+' 周'+(c.note?(' · '+esc(c.note)):'')+'</div></div>'+
-    '<div class="ops"><button data-edit="'+c.id+'">编辑</button><button class="del" data-del="'+c.id+'">删</button></div>'+
+    '<div class="ops"><button data-edit="'+esc(c.name)+'">编辑</button><button class="del" data-del="'+esc(c.name)+'">删</button></div>'+
     '</li>';
 }
 function renderToday(){
@@ -423,11 +424,37 @@ function changeWeek(delta){
   renderWeek();
 }
 function goThisWeek(){ previewWeek = null; renderWeek(); }
+function groupByName(){
+  const map=new Map();
+  for(const c of courses){
+    if(!map.has(c.name)) map.set(c.name, []);
+    map.get(c.name).push(c);
+  }
+  const arr=[...map.entries()].map(([name, sessions])=>({name, sessions}));
+  arr.sort((a,b)=>{
+    const ka=Math.min(...a.sessions.map(s=>s.weekday*10000+toMin(s.start)));
+    const kb=Math.min(...b.sessions.map(s=>s.weekday*10000+toMin(s.start)));
+    return ka-kb || a.name.localeCompare(b.name, "zh");
+  });
+  return arr;
+}
+function courseGroupHTML(g){
+  const sessions=g.sessions.slice().sort((a,b)=>(a.weekday-b.weekday)||(toMin(a.start)-toMin(b.start)));
+  const note=sessions[0].note||"";
+  let ses="";
+  for(const c of sessions){
+    ses+='<div class="sub">'+WD_FULL[c.weekday]+' 第'+c.ps+'–'+c.pe+'节 '+c.start+'–'+c.end+' · '+esc(c.location)+' · 第'+weeksToStr(c.weeks)+'周</div>';
+  }
+  return '<li class="item">'+
+    '<div><div class="nm">'+esc(g.name)+(note?' <span class="tag">'+esc(note)+'</span>':'')+'</div>'+ses+'</div>'+
+    '<div class="ops"><button data-edit="'+esc(g.name)+'">编辑</button><button class="del" data-del="'+esc(g.name)+'">删</button></div>'+
+    '</li>';
+}
 function renderAll(){
   const ul=$("courseList");
   if(!courses.length){ ul.innerHTML='<li class="item"><span class="muted">还没有课程，点「添加课程」或「导入 CSV」</span></li>'; return; }
-  const sorted=courses.slice().sort((a,b)=> (a.weekday-b.weekday) || (toMin(a.start)-toMin(b.start)) || (a.name<b.name?-1:1));
-  ul.innerHTML=sorted.map(itemHTML).join("");
+  const groups=groupByName();
+  ul.innerHTML=groups.map(courseGroupHTML).join("");
 }
 function renderAllViews(){ renderStatus(); renderNext(); renderWeek(); renderToday(); renderAll(); }
 
@@ -512,63 +539,97 @@ document.addEventListener("click", e=>{
 });
 
 function openAdd(){
-  openSheet(courseForm({name:"",weekday:1,ps:1,pe:2,start:"08:30",end:"10:05",location:"",weeks:[],note:""}, null));
-  bindCourseForm(null);
+  openCourseForm({name:"", note:"", sessions:[defaultSession()]}, null);
 }
-function openEdit(id){
-  const c=courses.find(x=>x.id===id); if(!c) return;
-  openSheet(courseForm(c, id));
-  bindCourseForm(id);
+function openEdit(name){
+  const sess = courses.filter(c=>c.name===name);
+  if(!sess.length) return;
+  const sessions = sess.map(c=>({weekday:c.weekday, ps:c.ps, pe:c.pe, start:c.start, end:c.end, location:c.location, weeks:c.weeks.slice()}));
+  openCourseForm({name:name, note:sess[0].note||"", sessions:sessions}, name);
 }
-function courseForm(c, id){
-  const wdOpts=Object.keys(WD_FULL).map(k=>'<option value="'+k+'" '+(String(c.weekday)===k?"selected":"")+'>'+WD_FULL[k]+'</option>').join("");
-  const pOpts=(sel)=>{ let s=""; for(let i=1;i<=13;i++) s+='<option value="'+i+'" '+((sel||1)===i?"selected":"")+'>第'+i+'节 '+PERIODS[i][0]+'–'+PERIODS[i][1]+'</option>'; return s; };
-  return '<h3>'+(id?"编辑课程":"添加课程")+'</h3>'+
-    '<div class="field"><label>课程名称</label><input id="f-name" value="'+esc(c.name)+'" placeholder="如：C++程序设计"></div>'+
-    '<div class="row2">'+
-      '<div class="field"><label>星期</label><select id="f-wd">'+wdOpts+'</select></div>'+
-      '<div class="field"><label>上课地点</label><input id="f-loc" value="'+esc(c.location)+'" placeholder="如：教一楼207"></div>'+
-    '</div>'+
-    '<div class="row2">'+
-      '<div class="field"><label>开始节次</label><select id="f-ps">'+pOpts(c.ps)+'</select></div>'+
-      '<div class="field"><label>结束节次</label><select id="f-pe">'+pOpts(c.pe)+'</select></div>'+
-    '</div>'+
-    '<div class="row2">'+
-      '<div class="field"><label>开始时间</label><input type="time" id="f-start" value="'+esc(c.start)+'"></div>'+
-      '<div class="field"><label>结束时间</label><input type="time" id="f-end" value="'+esc(c.end)+'"></div>'+
-    '</div>'+
-    '<div class="field"><label>周次</label><input id="f-weeks" value="'+esc(weeksToStr(c.weeks))+'" placeholder="如 2-13 或 2,3,4,7-9">'+
-      '<div class="hint">支持「2-13」「2,3,4」「2-5,7,9-11」等写法</div></div>'+
-    '<div class="field"><label>备注（可选）</label><input id="f-note" value="'+esc(c.note||"")+'" placeholder="如：上午/下午/晚上"></div>'+
+function defaultSession(){ return {weekday:1, ps:1, pe:2, start:"08:30", end:"10:05", location:"", weeks:[]}; }
+function openCourseForm(course, oldName){
+  openSheet(courseFormHTML(course, oldName));
+  bindCourseForm(oldName);
+}
+function courseFormHTML(course, oldName){
+  return '<h3>'+(oldName?"编辑课程":"添加课程")+'</h3>'+
+    '<div class="field"><label>课程名称</label><input id="f-name" value="'+esc(course.name)+'" placeholder="如：C++程序设计"></div>'+
+    '<div class="field"><label>备注（可选）</label><input id="f-note" value="'+esc(course.note||"")+'" placeholder="如：上午/下午/晚上"></div>'+
+    '<div id="f-sessions"></div>'+
+    '<button type="button" class="btn" id="f-addSession">＋ 再加一个上课时间</button>'+
+    '<div class="hint">同一门课有多个上课时间，就点上面的按钮加多行</div>'+
     '<div class="sheet-actions">'+
       '<button class="btn" id="f-cancel">取消</button>'+
       '<button class="btn primary" id="f-save">保存</button>'+
     '</div>';
 }
-function bindCourseForm(id){
-  const syncTimes=()=>{
-    const ps=+$("f-ps").value, pe=+$("f-pe").value;
-    if(PERIODS[ps]) $("f-start").value=PERIODS[ps][0];
-    if(PERIODS[pe]) $("f-end").value=PERIODS[pe][1];
+function sessionRowHTML(i, s){
+  const wdOpts=Object.keys(WD_FULL).map(k=>'<option value="'+k+'" '+(String(s.weekday)===k?"selected":"")+'>'+WD_FULL[k]+'</option>').join("");
+  const pOpts=(sel)=>{ let o=""; for(let p=1;p<=13;p++) o+='<option value="'+p+'" '+((sel||1)===p?"selected":"")+'>第'+p+'节 '+PERIODS[p][0]+'–'+PERIODS[p][1]+'</option>'; return o; };
+  return '<div class="sesrow">'+
+    '<div class="row2">'+
+      '<div class="field"><label>星期</label><select id="f-s-'+i+'-wd">'+wdOpts+'</select></div>'+
+      '<div class="field"><label>上课地点</label><input id="f-s-'+i+'-loc" value="'+esc(s.location)+'" placeholder="教一楼207"></div>'+
+    '</div>'+
+    '<div class="row2">'+
+      '<div class="field"><label>开始节次</label><select id="f-s-'+i+'-ps">'+pOpts(s.ps)+'</select></div>'+
+      '<div class="field"><label>结束节次</label><select id="f-s-'+i+'-pe">'+pOpts(s.pe)+'</select></div>'+
+    '</div>'+
+    '<div class="row2">'+
+      '<div class="field"><label>开始时间</label><input type="time" id="f-s-'+i+'-start" value="'+esc(s.start)+'"></div>'+
+      '<div class="field"><label>结束时间</label><input type="time" id="f-s-'+i+'-end" value="'+esc(s.end)+'"></div>'+
+    '</div>'+
+    '<div class="field"><label>周次</label><input id="f-s-'+i+'-weeks" value="'+esc(weeksToStr(s.weeks))+'" placeholder="2-13 或 2,3,4,7-9">'+
+      '<div class="hint">支持「2-13」「2,3,4」「2-5,7,9-11」等写法</div></div>'+
+    '<button type="button" class="btn warn" data-removeses="'+i+'">删除此时间</button>'+
+  '</div>';
+}
+function bindCourseForm(oldName){
+  let sessions = oldName
+    ? courses.filter(c=>c.name===oldName).map(c=>({weekday:c.weekday, ps:c.ps, pe:c.pe, start:c.start, end:c.end, location:c.location, weeks:c.weeks.slice()}))
+    : [defaultSession()];
+  const render=()=>{
+    $("f-sessions").innerHTML = sessions.map((s,i)=>sessionRowHTML(i,s)).join("");
+    sessions.forEach((s,i)=>{
+      const ps=$("f-s-"+i+"-ps"), pe=$("f-s-"+i+"-pe");
+      const sync=()=>{
+        if(PERIODS[+ps.value]) $("f-s-"+i+"-start").value=PERIODS[+ps.value][0];
+        if(PERIODS[+pe.value]) $("f-s-"+i+"-end").value=PERIODS[+pe.value][1];
+      };
+      if(ps) ps.addEventListener("change", sync);
+      if(pe) pe.addEventListener("change", sync);
+    });
+    sheet.querySelectorAll("[data-removeses]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const i=+btn.getAttribute("data-removeses");
+        if(sessions.length<=1){ toast("至少保留一个上课时间"); return; }
+        sessions.splice(i,1);
+        render();
+      });
+    });
   };
-  $("f-ps").addEventListener("change", syncTimes);
-  $("f-pe").addEventListener("change", syncTimes);
+  render();
+  $("f-addSession").addEventListener("click", ()=>{ sessions.push(defaultSession()); render(); });
   $("f-cancel").addEventListener("click", closeSheet);
   $("f-save").addEventListener("click", ()=>{
     const name=$("f-name").value.trim();
-    const wd=+$("f-wd").value;
-    const start=$("f-start").value, end=$("f-end").value;
-    const location=$("f-loc").value.trim();
-    const weeks=parseWeeks($("f-weeks").value);
     const note=$("f-note").value.trim();
-    const ps=+$("f-ps").value, pe=+$("f-pe").value;
     if(!name){ toast("请填课程名称"); return; }
-    if(!start||!end){ toast("请填开始/结束时间"); return; }
-    if(toMin(end)<=toMin(start)){ toast("结束时间需晚于开始时间"); return; }
-    if(!weeks.length){ toast("请填周次，如 2-13"); return; }
-    const obj={name, weekday:wd, ps, pe, start, end, location, weeks, note};
-    if(id){ const i=courses.findIndex(x=>x.id===id); if(i>=0) courses[i]=Object.assign({},courses[i],obj); }
-    else { courses.push(Object.assign({id:uid()}, obj)); }
+    const built=[];
+    for(let i=0;i<sessions.length;i++){
+      const wd=+$("f-s-"+i+"-wd").value;
+      const ps=+$("f-s-"+i+"-ps").value, pe=+$("f-s-"+i+"-pe").value;
+      const start=$("f-s-"+i+"-start").value, end=$("f-s-"+i+"-end").value;
+      const location=$("f-s-"+i+"-loc").value.trim();
+      const weeks=parseWeeks($("f-s-"+i+"-weeks").value);
+      if(!start||!end){ toast("第"+(i+1)+"个时间：请填开始/结束时间"); return; }
+      if(toMin(end)<=toMin(start)){ toast("第"+(i+1)+"个时间：结束需晚于开始"); return; }
+      if(!weeks.length){ toast("第"+(i+1)+"个时间：请填周次（如 2-13）"); return; }
+      built.push({weekday:wd, ps, pe, start, end, location, weeks});
+    }
+    if(oldName){ courses = courses.filter(c=>c.name!==oldName); }
+    for(const s of built){ courses.push(Object.assign({id:uid(), name, note}, s)); }
     saveCourses(); closeSheet(); renderAllViews(); toast("已保存");
   });
 }
@@ -641,8 +702,8 @@ $("btnThisWeek").addEventListener("click", goThisWeek);
 document.addEventListener("click", e=>{
   const ed=e.target.closest("[data-edit]"); if(ed){ openEdit(ed.getAttribute("data-edit")); return; }
   const del=e.target.closest("[data-del]"); if(del){
-    const id=del.getAttribute("data-del");
-    if(confirm("删除这门课？")){ courses=courses.filter(x=>x.id!==id); saveCourses(); renderAllViews(); toast("已删除"); }
+    const name=del.getAttribute("data-del");
+    if(confirm("删除「"+name+"」这门课（含它所有上课时间）？")){ courses=courses.filter(x=>x.name!==name); saveCourses(); renderAllViews(); toast("已删除"); }
   }
 });
 
